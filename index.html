@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>轻量会议 - 视频通话</title>
+</head>
+<body>
+    <h2>加入会议</h2>
+    <input id="usernameInput" placeholder="输入昵称" style="margin-bottom: 10px;"><br>
+    <input id="roomInput" placeholder="输入房间号">
+    <button id="joinBtn">加入</button>
+
+
+    <h3>我的视频：</h3>
+    <video id="localVideo" autoplay playsinline muted></video>
+
+    <h3>对方视频：</h3>
+    <video id="remoteVideo" autoplay playsinline></video>
+
+    <div style="margin-top: 30px;">
+        <h3>💬 聊天区：</h3>
+        <div id="chatBox" style="border:1px solid #ccc; height:200px; overflow-y:auto; padding:10px; margin-bottom:10px;"></div>
+        <input id="chatInput" placeholder="输入消息..." style="padding:6px; width: 60%;">
+        <button id="sendBtn">发送</button>
+    </div>
+
+
+    <script>
+        const roomInput = document.getElementById('roomInput');
+        const joinBtn = document.getElementById('joinBtn');
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+
+        let username = '我';
+        let localStream;
+        let peerConnection;
+        let socket;
+
+        const config = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        joinBtn.onclick = async () => {
+            const room = roomInput.value.trim();
+            const inputName = document.getElementById('usernameInput').value.trim();
+            if (!room) return alert('请输入房间号');
+            if (inputName) username = inputName;
+
+            socket = new WebSocket('ws://localhost:8080');
+
+            socket.onmessage = async event => {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'ready') {
+                    createPeer();
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+                    socket.send(JSON.stringify({ type: 'signal', data: offer }));
+                } else if (msg.type === 'signal') {
+                    if (msg.data.type === 'offer') {
+                        createPeer();
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.data));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        socket.send(JSON.stringify({ type: 'signal', data: answer }));
+                    } else if (msg.data.type === 'answer') {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.data));
+                    } else if (msg.data.candidate) {
+                        await peerConnection.addIceCandidate(msg.data);
+                    }
+                }
+                else if (msg.type === 'chat') {
+                    appendMessage(msg.sender || '对方', msg.text);
+                }
+
+            };
+
+            socket.onopen = () => {
+                socket.send(JSON.stringify({ type: 'join', room }));
+            };
+
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localVideo.srcObject = localStream;
+        };
+
+        function createPeer() {
+            if (peerConnection) return;
+
+            peerConnection = new RTCPeerConnection(config);
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    socket.send(JSON.stringify({ type: 'signal', data: event.candidate }));
+                }
+            };
+
+            peerConnection.ontrack = event => {
+                remoteVideo.srcObject = event.streams[0];
+            };
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+        }
+
+        const chatBox = document.getElementById('chatBox');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        sendBtn.onclick = () => {
+            const text = chatInput.value.trim();
+            if (!text) return;
+            appendMessage('我', text);
+            socket.send(JSON.stringify({
+                type: 'chat',
+                text,
+                sender: username
+            }));
+
+            chatInput.value = '';
+        };
+
+        chatInput.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                sendBtn.click(); // 触发“发送”按钮点击事件
+            }
+        });
+
+
+        function appendMessage(sender, text) {
+            const now = new Date();
+            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const div = document.createElement('div');
+            div.innerHTML = `<b>[${time}] ${sender}：</b> ${text}`;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+
+        video {
+            width: 40%;
+            border: 1px solid #ccc;
+            margin: 10px;
+        }
+
+        input {
+            padding: 8px;
+        }
+    </style>
+</body>
+</html>
