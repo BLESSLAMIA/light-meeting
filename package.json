@@ -12,5 +12,8 @@
   "dependencies": {
     "express": "^5.1.0",
     "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.24.0"
   }
 }
