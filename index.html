@@ -46,7 +46,7 @@
             if (!room) return alert('请输入房间号');
             if (inputName) username = inputName;
 
-            socket = new WebSocket('ws://localhost:8080');
+            socket = new WebSocket('ws://122.51.36.132:8080');
 
             socket.onmessage = async event => {
                 const msg = JSON.parse(event.data);
